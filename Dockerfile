@@ -7,7 +7,7 @@ WORKDIR /app
 COPY . .
 
 # Build the binary with static linking using vendored dependencies
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=vendor -a -installsuffix cgo -ldflags="-w -s" -o trashcommand .
+RUN CGO_ENABLED=0 GOOS=linux go build -mod=vendor -a -installsuffix cgo -ldflags="-w -s" -o trashcommand .
 
 # Runtime stage
 FROM scratch
