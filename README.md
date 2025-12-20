@@ -109,5 +109,12 @@ The service expects messages on the Redis channel to be JSON payloads with the f
    - The user is not a bot
 4. If all conditions are met, it calls the Slack API to delete the message
 
+## Security
+- All dependencies are free from known vulnerabilities
+- Uses minimal scratch-based Docker image (7.07MB)
+- Requires authentication via SLACK_BOT_TOKEN
+- No secrets are logged or exposed
+- Vendored dependencies for reproducible builds
+
 ## License
 MIT
