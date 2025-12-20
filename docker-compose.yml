@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  trashcommand:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: trashcommand:latest
+    container_name: trashcommand
+    restart: unless-stopped
+    environment:
+      # Slack configuration
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      
+      # Redis configuration
+      REDIS_ADDR: ${REDIS_ADDR:-localhost:6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_CHANNEL: ${REDIS_CHANNEL:-slack-relay-reaction-added}
+    networks:
+      - trashcommand-network
+
+networks:
+  trashcommand-network:
+    driver: bridge
