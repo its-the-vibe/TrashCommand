@@ -19,3 +19,7 @@ services:
       REDIS_ADDR: ${REDIS_ADDR:-host.docker.internal:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_CHANNEL: ${REDIS_CHANNEL:-slack-relay-reaction-added}
+      
+      # TimeBomb configuration
+      TIMEBOMB_REDIS_CHANNEL: ${TIMEBOMB_REDIS_CHANNEL:-timebomb-messages}
+      TIMEBOMB_TTL_SECONDS: ${TIMEBOMB_TTL_SECONDS:-5}
