@@ -1,13 +1,16 @@
 # TrashCommand
-Listen for the trashcan emoji reaction and delete the associated slack message
+Listen for the trashcan emoji reaction and delete the associated slack message, or listen for the bomb emoji and schedule deletion via TimeBomb
 
 ## Overview
-TrashCommand is a Go service that listens to Slack reaction events via Redis and automatically deletes messages when they receive a wastebasket (🗑️) emoji reaction from a non-bot user.
+TrashCommand is a Go service that listens to Slack reaction events via Redis and:
+- Automatically deletes messages when they receive a wastebasket (🗑️) emoji reaction from a non-bot user
+- Publishes messages to TimeBomb for scheduled deletion when they receive a bomb (💣) emoji reaction from a non-bot user
 
 ## Features
 - Subscribes to Redis channel for Slack reaction events
-- Filters for wastebasket emoji reactions from non-bot users
-- Automatically deletes the associated Slack message
+- Filters for wastebasket and bomb emoji reactions from non-bot users
+- Automatically deletes messages with wastebasket reactions
+- Publishes bomb-reacted messages to TimeBomb for scheduled deletion
 - Configurable via environment variables
 - Containerized deployment with Docker
 
@@ -25,6 +28,8 @@ The service is configured via environment variables:
 | `REDIS_ADDR` | Redis server address | `localhost:6379` |
 | `REDIS_PASSWORD` | Redis password (if required) | - |
 | `REDIS_CHANNEL` | Redis channel to subscribe to | `slack-relay-reaction-added` |
+| `TIMEBOMB_REDIS_CHANNEL` | Redis channel to publish bomb reactions to | `timebomb-messages` |
+| `TIMEBOMB_TTL_SECONDS` | TTL in seconds for TimeBomb messages | `5` |
 
 ## Running Locally
 
@@ -104,10 +109,14 @@ The service expects messages on the Redis channel to be JSON payloads with the f
 2. When a message is received, it parses the JSON payload
 3. It checks if:
    - The event type is `reaction_added`
-   - The reaction is `wastebasket`
+   - The reaction is `wastebasket` or `bomb`
    - The item is a `message`
    - The user is not a bot
-4. If all conditions are met, it calls the Slack API to delete the message
+4. For wastebasket reactions:
+   - Calls the Slack API to delete the message immediately
+5. For bomb reactions:
+   - Publishes the message details to the TimeBomb Redis channel with the configured TTL
+   - TimeBomb will handle the scheduled deletion
 
 ## Security
 - All dependencies are free from known vulnerabilities

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/redis/go-redis/v9"
@@ -14,12 +15,12 @@ import (
 
 // ReactionEvent represents the structure of a Slack reaction event
 type ReactionEvent struct {
-	Token           string `json:"token"`
-	TeamID          string `json:"team_id"`
-	APIAppID        string `json:"api_app_id"`
-	Type            string `json:"type"`
-	Event           Event  `json:"event"`
-	Authorizations  []Auth `json:"authorizations"`
+	Token          string `json:"token"`
+	TeamID         string `json:"team_id"`
+	APIAppID       string `json:"api_app_id"`
+	Type           string `json:"type"`
+	Event          Event  `json:"event"`
+	Authorizations []Auth `json:"authorizations"`
 }
 
 // Event represents the nested event object
@@ -47,21 +48,25 @@ type Auth struct {
 
 // Config holds the application configuration
 type Config struct {
-	SlackBotToken string
-	RedisAddr     string
-	RedisPassword string
-	RedisDB       int
-	RedisChannel  string
+	SlackBotToken        string
+	RedisAddr            string
+	RedisPassword        string
+	RedisDB              int
+	RedisChannel         string
+	TimeBombRedisChannel string
+	TimeBombTTLSeconds   int
 }
 
 func main() {
 	// Load configuration from environment variables
 	config := Config{
-		SlackBotToken: getEnv("SLACK_BOT_TOKEN", ""),
-		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
-		RedisPassword: getEnv("REDIS_PASSWORD", ""),
-		RedisDB:       0,
-		RedisChannel:  getEnv("REDIS_CHANNEL", "slack-relay-reaction-added"),
+		SlackBotToken:        getEnv("SLACK_BOT_TOKEN", ""),
+		RedisAddr:            getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:        getEnv("REDIS_PASSWORD", ""),
+		RedisDB:              0,
+		RedisChannel:         getEnv("REDIS_CHANNEL", "slack-relay-reaction-added"),
+		TimeBombRedisChannel: getEnv("TIMEBOMB_REDIS_CHANNEL", "timebomb-messages"),
+		TimeBombTTLSeconds:   getEnvInt("TIMEBOMB_TTL_SECONDS", 5),
 	}
 
 	if config.SlackBotToken == "" {
@@ -116,12 +121,19 @@ func main() {
 				log.Println("Channel closed, exiting")
 				return
 			}
-			handleMessage(msg.Payload, slackClient)
+			handleMessage(msg.Payload, slackClient, redisClient, &config)
 		}
 	}
 }
 
-func handleMessage(payload string, slackClient *slack.Client) {
+// TimeBombMessage represents the message structure to send to TimeBomb
+type TimeBombMessage struct {
+	Channel   string `json:"channel"`
+	Timestamp string `json:"ts"`
+	TTL       int    `json:"ttl"`
+}
+
+func handleMessage(payload string, slackClient *slack.Client, redisClient *redis.Client, config *Config) {
 	var event ReactionEvent
 	if err := json.Unmarshal([]byte(payload), &event); err != nil {
 		log.Printf("Error parsing payload: %v", err)
@@ -131,12 +143,6 @@ func handleMessage(payload string, slackClient *slack.Client) {
 	// Check if this is a reaction_added event
 	if event.Event.Type != "reaction_added" {
 		log.Printf("Skipping non-reaction event: %s", event.Event.Type)
-		return
-	}
-
-	// Check if the reaction is a wastebasket
-	if event.Event.Reaction != "wastebasket" {
-		log.Printf("Skipping non-wastebasket reaction: %s", event.Event.Reaction)
 		return
 	}
 
@@ -152,12 +158,28 @@ func handleMessage(payload string, slackClient *slack.Client) {
 		return
 	}
 
-	// Delete the message
+	// Handle wastebasket reaction - delete message immediately
+	if event.Event.Reaction == "wastebasket" {
+		deleteMessage(event, slackClient)
+		return
+	}
+
+	// Handle bomb reaction - publish to TimeBomb
+	if event.Event.Reaction == "bomb" {
+		publishToTimeBomb(event, redisClient, config)
+		return
+	}
+
+	log.Printf("Skipping unsupported reaction: %s", event.Event.Reaction)
+}
+
+// deleteMessage deletes a Slack message immediately
+func deleteMessage(event ReactionEvent, slackClient *slack.Client) {
 	channel := event.Event.Item.Channel
 	timestamp := event.Event.Item.TS
-	
+
 	log.Printf("Deleting message in channel %s with timestamp %s", channel, timestamp)
-	
+
 	_, _, err := slackClient.DeleteMessage(channel, timestamp)
 	if err != nil {
 		log.Printf("Error deleting message: %v", err)
@@ -165,6 +187,33 @@ func handleMessage(payload string, slackClient *slack.Client) {
 	}
 
 	log.Printf("Successfully deleted message in channel %s", channel)
+}
+
+// publishToTimeBomb publishes a message to the TimeBomb Redis channel
+func publishToTimeBomb(event ReactionEvent, redisClient *redis.Client, config *Config) {
+	channel := event.Event.Item.Channel
+	timestamp := event.Event.Item.TS
+
+	message := TimeBombMessage{
+		Channel:   channel,
+		Timestamp: timestamp,
+		TTL:       config.TimeBombTTLSeconds,
+	}
+
+	payload, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("Error marshaling TimeBomb message: %v", err)
+		return
+	}
+
+	ctx := context.Background()
+	err = redisClient.Publish(ctx, config.TimeBombRedisChannel, string(payload)).Err()
+	if err != nil {
+		log.Printf("Error publishing to TimeBomb: %v", err)
+		return
+	}
+
+	log.Printf("Published message to TimeBomb: channel=%s, ts=%s, ttl=%ds", channel, timestamp, config.TimeBombTTLSeconds)
 }
 
 // isBot checks if the user who reacted is a bot
@@ -185,4 +234,18 @@ func getEnv(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+// getEnvInt retrieves an environment variable as an integer with a default value
+func getEnvInt(key string, defaultValue int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	intValue, err := strconv.Atoi(value)
+	if err != nil {
+		log.Printf("Invalid integer value for %s: %s, using default %d", key, value, defaultValue)
+		return defaultValue
+	}
+	return intValue
 }
