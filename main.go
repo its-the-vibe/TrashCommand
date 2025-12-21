@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/redis/go-redis/v9"
@@ -242,8 +242,7 @@ func getEnvInt(key string, defaultValue int) int {
 	if value == "" {
 		return defaultValue
 	}
-	intValue := 0
-	_, err := fmt.Sscanf(value, "%d", &intValue)
+	intValue, err := strconv.Atoi(value)
 	if err != nil {
 		log.Printf("Invalid integer value for %s: %s, using default %d", key, value, defaultValue)
 		return defaultValue
