@@ -3,11 +3,11 @@ FROM golang:1.25.5-alpine AS builder
 
 WORKDIR /app
 
-# Copy entire source tree including vendor directory
+# Copy source files
 COPY . .
 
-# Build the binary with static linking using vendored dependencies
-RUN CGO_ENABLED=0 GOOS=linux go build -mod=vendor -a -installsuffix cgo -ldflags="-w -s" -o trashcommand .
+# Build the binary with static linking
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o trashcommand .
 
 # Runtime stage
 FROM scratch
