@@ -123,7 +123,6 @@ The service expects messages on the Redis channel to be JSON payloads with the f
 - Uses minimal scratch-based Docker image (7.07MB)
 - Requires authentication via SLACK_BOT_TOKEN
 - No secrets are logged or exposed
-- Vendored dependencies for reproducible builds
 
 ## License
 MIT
