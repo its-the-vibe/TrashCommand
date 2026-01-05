@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/redis/go-redis/v9"
@@ -46,6 +47,17 @@ type Auth struct {
 	IsBot  bool   `json:"is_bot"`
 }
 
+// LogLevel represents the logging level
+type LogLevel int
+
+const (
+	LogLevelDebug LogLevel = iota
+	LogLevelInfo
+	LogLevelError
+)
+
+var currentLogLevel LogLevel = LogLevelInfo
+
 // Config holds the application configuration
 type Config struct {
 	SlackBotToken        string
@@ -55,6 +67,39 @@ type Config struct {
 	RedisChannel         string
 	TimeBombRedisChannel string
 	TimeBombTTLSeconds   int
+}
+
+// logDebug logs a message at DEBUG level
+func logDebug(format string, v ...interface{}) {
+	if currentLogLevel <= LogLevelDebug {
+		log.Printf("[DEBUG] "+format, v...)
+	}
+}
+
+// logInfo logs a message at INFO level
+func logInfo(format string, v ...interface{}) {
+	if currentLogLevel <= LogLevelInfo {
+		log.Printf("[INFO] "+format, v...)
+	}
+}
+
+// logError logs a message at ERROR level (always logged regardless of log level)
+func logError(format string, v ...interface{}) {
+	log.Printf("[ERROR] "+format, v...)
+}
+
+// parseLogLevel parses a log level string
+func parseLogLevel(level string) LogLevel {
+	switch strings.ToUpper(level) {
+	case "DEBUG":
+		return LogLevelDebug
+	case "INFO":
+		return LogLevelInfo
+	case "ERROR":
+		return LogLevelError
+	default:
+		return LogLevelInfo
+	}
 }
 
 func main() {
@@ -68,6 +113,9 @@ func main() {
 		TimeBombRedisChannel: getEnv("TIMEBOMB_REDIS_CHANNEL", "timebomb-messages"),
 		TimeBombTTLSeconds:   getEnvInt("TIMEBOMB_TTL_SECONDS", 5),
 	}
+
+	// Set log level
+	currentLogLevel = parseLogLevel(getEnv("LOG_LEVEL", "INFO"))
 
 	if config.SlackBotToken == "" {
 		log.Fatal("SLACK_BOT_TOKEN environment variable is required")
@@ -90,14 +138,14 @@ func main() {
 	if err := redisClient.Ping(ctx).Err(); err != nil {
 		log.Fatalf("Failed to connect to Redis: %v", err)
 	}
-	log.Printf("Connected to Redis at %s", config.RedisAddr)
+	logInfo("Connected to Redis at %s", config.RedisAddr)
 
 	// Subscribe to Redis channel
 	pubsub := redisClient.Subscribe(ctx, config.RedisChannel)
 	defer pubsub.Close()
 
-	log.Printf("Subscribed to Redis channel: %s", config.RedisChannel)
-	log.Println("Waiting for reaction events...")
+	logInfo("Subscribed to Redis channel: %s", config.RedisChannel)
+	logInfo("Waiting for reaction events...")
 
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -105,7 +153,7 @@ func main() {
 
 	go func() {
 		<-sigChan
-		log.Println("Shutting down...")
+		logInfo("Shutting down...")
 		cancel()
 	}()
 
@@ -114,11 +162,11 @@ func main() {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Context cancelled, exiting")
+			logInfo("Context cancelled, exiting")
 			return
 		case msg, ok := <-ch:
 			if !ok {
-				log.Println("Channel closed, exiting")
+				logInfo("Channel closed, exiting")
 				return
 			}
 			handleMessage(msg.Payload, slackClient, redisClient, &config)
@@ -136,25 +184,25 @@ type TimeBombMessage struct {
 func handleMessage(payload string, slackClient *slack.Client, redisClient *redis.Client, config *Config) {
 	var event ReactionEvent
 	if err := json.Unmarshal([]byte(payload), &event); err != nil {
-		log.Printf("Error parsing payload: %v", err)
+		logError("Error parsing payload: %v", err)
 		return
 	}
 
 	// Check if this is a reaction_added event
 	if event.Event.Type != "reaction_added" {
-		log.Printf("Skipping non-reaction event: %s", event.Event.Type)
+		logDebug("Skipping non-reaction event: %s", event.Event.Type)
 		return
 	}
 
 	// Check if the item is a message
 	if event.Event.Item.Type != "message" {
-		log.Printf("Skipping non-message item: %s", event.Event.Item.Type)
+		logDebug("Skipping non-message item: %s", event.Event.Item.Type)
 		return
 	}
 
 	// Check if the user who reacted is not a bot
 	if isBot(event) {
-		log.Printf("Skipping bot user reaction")
+		logDebug("Skipping bot user reaction")
 		return
 	}
 
@@ -170,7 +218,7 @@ func handleMessage(payload string, slackClient *slack.Client, redisClient *redis
 		return
 	}
 
-	log.Printf("Skipping unsupported reaction: %s", event.Event.Reaction)
+	logDebug("Skipping unsupported reaction: %s", event.Event.Reaction)
 }
 
 // deleteMessage deletes a Slack message immediately
@@ -178,15 +226,15 @@ func deleteMessage(event ReactionEvent, slackClient *slack.Client) {
 	channel := event.Event.Item.Channel
 	timestamp := event.Event.Item.TS
 
-	log.Printf("Deleting message in channel %s with timestamp %s", channel, timestamp)
+	logInfo("Deleting message in channel %s with timestamp %s", channel, timestamp)
 
 	_, _, err := slackClient.DeleteMessage(channel, timestamp)
 	if err != nil {
-		log.Printf("Error deleting message: %v", err)
+		logError("Error deleting message: %v", err)
 		return
 	}
 
-	log.Printf("Successfully deleted message in channel %s", channel)
+	logInfo("Successfully deleted message in channel %s", channel)
 }
 
 // publishToTimeBomb publishes a message to the TimeBomb Redis channel
@@ -202,18 +250,18 @@ func publishToTimeBomb(event ReactionEvent, redisClient *redis.Client, config *C
 
 	payload, err := json.Marshal(message)
 	if err != nil {
-		log.Printf("Error marshaling TimeBomb message: %v", err)
+		logError("Error marshaling TimeBomb message: %v", err)
 		return
 	}
 
 	ctx := context.Background()
 	err = redisClient.Publish(ctx, config.TimeBombRedisChannel, string(payload)).Err()
 	if err != nil {
-		log.Printf("Error publishing to TimeBomb: %v", err)
+		logError("Error publishing to TimeBomb: %v", err)
 		return
 	}
 
-	log.Printf("Published message to TimeBomb: channel=%s, ts=%s, ttl=%ds", channel, timestamp, config.TimeBombTTLSeconds)
+	logInfo("Published message to TimeBomb: channel=%s, ts=%s, ttl=%ds", channel, timestamp, config.TimeBombTTLSeconds)
 }
 
 // isBot checks if the user who reacted is a bot
@@ -244,7 +292,7 @@ func getEnvInt(key string, defaultValue int) int {
 	}
 	intValue, err := strconv.Atoi(value)
 	if err != nil {
-		log.Printf("Invalid integer value for %s: %s, using default %d", key, value, defaultValue)
+		logError("Invalid integer value for %s: %s, using default %d", key, value, defaultValue)
 		return defaultValue
 	}
 	return intValue
