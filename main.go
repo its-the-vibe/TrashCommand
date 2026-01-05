@@ -83,11 +83,9 @@ func logInfo(format string, v ...interface{}) {
 	}
 }
 
-// logError logs a message at ERROR level
+// logError logs a message at ERROR level (always logged regardless of log level)
 func logError(format string, v ...interface{}) {
-	if currentLogLevel <= LogLevelError {
-		log.Printf("[ERROR] "+format, v...)
-	}
+	log.Printf("[ERROR] "+format, v...)
 }
 
 // parseLogLevel parses a log level string
