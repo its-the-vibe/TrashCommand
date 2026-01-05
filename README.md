@@ -30,6 +30,12 @@ The service is configured via environment variables:
 | `REDIS_CHANNEL` | Redis channel to subscribe to | `slack-relay-reaction-added` |
 | `TIMEBOMB_REDIS_CHANNEL` | Redis channel to publish bomb reactions to | `timebomb-messages` |
 | `TIMEBOMB_TTL_SECONDS` | TTL in seconds for TimeBomb messages | `5` |
+| `LOG_LEVEL` | Logging level: DEBUG, INFO, or ERROR | `INFO` |
+
+### Log Levels
+- **DEBUG**: Logs all messages including skipped events (e.g., non-reaction events, bot reactions, unsupported reactions)
+- **INFO**: Logs important operational messages (startup, connections, message deletions, TimeBomb publishes)
+- **ERROR**: Logs only errors and fatal messages
 
 ## Running Locally
 
