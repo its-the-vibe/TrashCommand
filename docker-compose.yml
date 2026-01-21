@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   trashcommand:
     build:
@@ -10,7 +8,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     container_name: trashcommand
-    restart: unless-stopped
+    restart: on-failure:10
     environment:
       # Slack configuration
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
