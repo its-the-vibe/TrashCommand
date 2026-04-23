@@ -1,4 +1,6 @@
 # TrashCommand
+[![CI](https://github.com/its-the-vibe/TrashCommand/actions/workflows/ci.yaml/badge.svg)](https://github.com/its-the-vibe/TrashCommand/actions/workflows/ci.yaml)
+
 Listen for the trashcan emoji reaction and delete the associated slack message, or listen for the bomb emoji and schedule deletion via TimeBomb
 
 ## Overview
